@@ -10,24 +10,36 @@ CORS(app)
 movie_data = None
 
 def load_model_data():
-    """Load pre-computed similarity data"""
+    """Load pre-computed similarity data from GitHub Releases"""
     global movie_data
     
+    # Try local file first (for development)
     base_dir = os.path.dirname(os.path.abspath(__file__))
     data_path = os.path.join(base_dir, "movie_data_light.pkl")
     
     if os.path.exists(data_path):
-        print("Loading movie data...")
+        print("Loading from local file...")
         try:
             with open(data_path, "rb") as file:
                 movie_data = pickle.load(file)
-            print(f"✅ Loaded {len(movie_data['titles'])} movies")
+            print(f"✅ Loaded {len(movie_data['titles'])} movies from local file")
             return True
         except Exception as e:
-            print(f"❌ Error loading data: {e}")
-            return False
-    else:
-        print(f"❌ Could not find data file at: {data_path}")
+            print(f"❌ Error loading local file: {e}")
+    
+    # Load from GitHub Releases (for production)
+    GITHUB_RELEASE_URL = "https://github.com/amirsakib16/Alcyoneus_Dxv65qL/releases/download/v1.0/movie_data_light.pkl"
+    
+    print(f"Loading from GitHub Releases: {GITHUB_RELEASE_URL}")
+    try:
+        import urllib.request
+        print("Downloading movie data (this may take a moment)...")
+        with urllib.request.urlopen(GITHUB_RELEASE_URL, timeout=60) as response:
+            movie_data = pickle.loads(response.read())
+        print(f"✅ Loaded {len(movie_data['titles'])} movies from GitHub")
+        return True
+    except Exception as e:
+        print(f"❌ Error loading from GitHub: {e}")
         return False
 
 # Initialize data when app starts
