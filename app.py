@@ -1,123 +1,84 @@
 from flask import Flask, request, jsonify, make_response, render_template
-import pandas as pd
 import pickle
 import os
-import requests
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
 
 # Global variables
-df = None
-cosine_sim = None
-
-# Simple stemmer to replace NLTK (reduces package size)
-def simple_stem(word):
-    """Lightweight stemmer without NLTK dependency"""
-    word = word.lower()
-    suffixes = ['ing', 'ly', 'ed', 'ious', 'ies', 'ive', 'es', 'ment', 's']
-    for suffix in suffixes:
-        if word.endswith(suffix) and len(word) > len(suffix) + 2:
-            return word[:-len(suffix)]
-    return word
-
-def TXTtoLST(data):
-    """Convert text to list of stemmed words"""
-    return [simple_stem(word) for word in data.split()]
+movie_data = None
 
 def load_model_data():
-    """Load pickle file from local or remote source"""
-    global df, cosine_sim
+    """Load pre-computed similarity data"""
+    global movie_data
     
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    pickle_path = os.path.join(base_dir, "information.pkl")
+    data_path = os.path.join(base_dir, "movie_data_light.pkl")
     
-    # Option 1: Try loading from local file first
-    if os.path.exists(pickle_path):
-        print("Loading from local pickle file...")
+    if os.path.exists(data_path):
+        print("Loading movie data...")
         try:
-            with open(pickle_path, "rb") as file:
-                df = pickle.load(file)
-            print(f"Loaded {len(df)} movies from local file")
+            with open(data_path, "rb") as file:
+                movie_data = pickle.load(file)
+            print(f"✅ Loaded {len(movie_data['titles'])} movies")
+            return True
         except Exception as e:
-            print(f"Error loading local file: {e}")
+            print(f"❌ Error loading data: {e}")
             return False
     else:
-        # Option 2: Load from remote URL (GitHub, Vercel Blob, etc.)
-        # Uncomment and update URL if using remote storage
-        """
-        REMOTE_URL = "https://your-storage-url.com/information.pkl"
-        print("Loading from remote URL...")
-        try:
-            response = requests.get(REMOTE_URL, timeout=30)
-            response.raise_for_status()
-            df = pickle.loads(response.content)
-            print(f"Loaded {len(df)} movies from remote URL")
-        except Exception as e:
-            print(f"Error loading from remote: {e}")
-            return False
-        """
-        print(f"Could not find pickle file at: {pickle_path}")
-        return False
-    
-    # Build similarity matrix
-    try:
-        if "TKN" not in df.columns:
-            print("Error: 'TKN' column not found in dataframe")
-            return False
-            
-        count_vectorizer = CountVectorizer(max_features=5000, stop_words='english')
-        vector = count_vectorizer.fit_transform(df["TKN"]).toarray()
-        cosine_sim = cosine_similarity(vector)
-        print("Similarity matrix built successfully")
-        return True
-    except Exception as e:
-        print(f"Error building similarity matrix: {e}")
+        print(f"❌ Could not find data file at: {data_path}")
         return False
 
-# Load data on startup (compatible with Flask 3.0+)
+# Initialize data when app starts
 def initialize():
-    """Initialize data before first request"""
-    global df, cosine_sim
-    if df is None:
+    """Initialize data on startup"""
+    global movie_data
+    if movie_data is None:
         success = load_model_data()
         if not success:
-            print("WARNING: Failed to load model data!")
+            print("⚠️  WARNING: Failed to load movie data!")
 
-# Call initialize when app starts
 with app.app_context():
     initialize()
 
 @app.route("/")
 def home():
     """Render home page"""
-    return render_template("index.html")
+    if os.path.exists(os.path.join('templates', 'index.html')):
+        return render_template("index.html")
+    return jsonify({
+        "message": "Movie Recommendation API",
+        "endpoints": {
+            "/test": "Test API connection",
+            "/movies": "Get all movies (GET)",
+            "/recommend": "Get recommendations (POST with {movie: 'name'})",
+            "/health": "Health check"
+        }
+    })
 
 @app.route("/test", methods=["GET"])
 def test():
-    """Test endpoint to verify API is working"""
+    """Test endpoint"""
     return jsonify({
-        "message": "CORS test successful!",
+        "message": "API is working!",
         "status": "running",
-        "movies_loaded": len(df) if df is not None else 0
+        "movies_loaded": len(movie_data['titles']) if movie_data else 0
     })
 
 @app.route("/recommend", methods=["POST"])
 def recommend():
-    """Get movie recommendations based on input movie"""
-    if df is None or cosine_sim is None:
+    """Get movie recommendations"""
+    if movie_data is None:
         return make_response(jsonify({
-            "error": "Model not loaded. Please try again later."
+            "error": "Movie data not loaded. Please try again later."
         }), 503)
     
     data = request.get_json()
     
     if not data or "movie" not in data:
         return make_response(jsonify({
-            "error": "Please provide a movie name in the request body."
+            "error": "Please provide a movie name in the request body as {\"movie\": \"name\"}"
         }), 400)
     
     movie_name = data.get("movie", "").strip()
@@ -128,26 +89,36 @@ def recommend():
         }), 400)
     
     movie_name_lower = movie_name.lower()
+    titles = movie_data['titles']
+    similarity_matrix = movie_data['similarity_matrix']
     
-    # Find matching movie titles (case-insensitive)
-    matching_movies = df[df["title"].str.lower().str.contains(movie_name_lower, na=False)]
+    # Find matching movie (case-insensitive)
+    movie_index = None
+    exact_title = None
     
-    if matching_movies.empty:
+    for idx, title in enumerate(titles):
+        if movie_name_lower in title.lower():
+            movie_index = idx
+            exact_title = title
+            break
+    
+    if movie_index is None:
         return make_response(jsonify({
             "error": f"Movie '{movie_name}' not found in database.",
-            "suggestion": "Try searching for the movie first using /movies endpoint"
+            "suggestion": "Try searching with /movies?search=yourquery"
         }), 404)
     
-    # Get the index of the first matching movie
-    movie_index = matching_movies.index[0]
-    exact_title = df.iloc[movie_index]["title"]
+    # Get similarity scores for this movie
+    similarities = similarity_matrix[movie_index]
     
-    # Get similarity scores
-    similarity_scores = list(enumerate(cosine_sim[movie_index]))
-    similarity_scores = sorted(similarity_scores, key=lambda x: x[1], reverse=True)[1:9]
+    # Get indices of top 8 similar movies (excluding the movie itself)
+    similar_indices = sorted(
+        range(len(similarities)), 
+        key=lambda i: similarities[i], 
+        reverse=True
+    )[1:9]
     
-    # Get recommended movie titles
-    recommended_movies = [df.iloc[i[0]]["title"] for i in similarity_scores]
+    recommended_movies = [titles[i] for i in similar_indices]
     
     return jsonify({
         "query": movie_name,
@@ -157,26 +128,25 @@ def recommend():
 
 @app.route("/movies", methods=["GET"])
 def get_movies():
-    """Get list of all available movies"""
-    if df is None:
+    """Get list of all movies with optional search"""
+    if movie_data is None:
         return make_response(jsonify({
             "error": "Movie database not loaded."
         }), 503)
     
-    # Optional: Add search/filter functionality
+    titles = movie_data['titles']
     search_query = request.args.get("search", "").lower()
     
     if search_query:
-        filtered_titles = df[df["title"].str.lower().str.contains(search_query, na=False)]["title"].tolist()
+        filtered_titles = [t for t in titles if search_query in t.lower()]
         return jsonify({
             "count": len(filtered_titles),
             "movies": filtered_titles
         })
     
-    movie_titles = df["title"].tolist()
     return jsonify({
-        "count": len(movie_titles),
-        "movies": movie_titles
+        "count": len(titles),
+        "movies": titles
     })
 
 @app.route("/health", methods=["GET"])
@@ -184,15 +154,16 @@ def health():
     """Health check endpoint"""
     return jsonify({
         "status": "healthy",
-        "model_loaded": df is not None and cosine_sim is not None,
-        "total_movies": len(df) if df is not None else 0
+        "data_loaded": movie_data is not None,
+        "total_movies": len(movie_data['titles']) if movie_data else 0
     })
 
 @app.errorhandler(404)
 def not_found(error):
     """Handle 404 errors"""
     return make_response(jsonify({
-        "error": "Endpoint not found"
+        "error": "Endpoint not found",
+        "available_endpoints": ["/", "/test", "/movies", "/recommend", "/health"]
     }), 404)
 
 @app.errorhandler(500)
@@ -203,7 +174,6 @@ def internal_error(error):
     }), 500)
 
 if __name__ == "__main__":
-    # Load data if running locally
-    if df is None:
+    if movie_data is None:
         load_model_data()
     app.run(debug=True, port=5000)
