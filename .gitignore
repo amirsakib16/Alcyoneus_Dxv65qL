@@ -25,5 +25,9 @@ information_backup.pkl
 .DS_Store
 Thumbs.db
 
+echo "movie_data_light.pkl" >> .gitignore
+echo "*.pkl" >> .gitignore
+
+
 # Vercel
 .vercel
