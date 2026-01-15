@@ -27,6 +27,7 @@ Thumbs.db
 
 echo "movie_data_light.pkl" >> .gitignore
 echo "*.pkl" >> .gitignore
+echo "information.pkl" >> .gitignore
 
 
 # Vercel

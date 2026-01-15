@@ -22,7 +22,7 @@ cosine_sim = cosine_similarity(vector)
 print(f"Similarity matrix shape: {cosine_sim.shape}")
 
 # Instead of storing full matrix, store only top K recommendations per movie
-TOP_K = 50  # Store top 50 similar movies per movie
+TOP_K = 15  # Store top 15 similar movies per movie (reduced to fit GitHub's 100MB limit)
 print(f"Extracting top {TOP_K} recommendations per movie...")
 
 recommendations = {}
@@ -33,10 +33,10 @@ for idx in range(len(df)):
     # Get indices of top K similar movies (excluding the movie itself)
     top_indices = np.argsort(similarities)[::-1][1:TOP_K+1]
     
-    # Store indices and scores
+    # Store indices and scores (use float16 to save space)
     recommendations[idx] = {
-        'indices': top_indices.tolist(),
-        'scores': similarities[top_indices].tolist()
+        'indices': top_indices.astype(np.int16).tolist(),  # int16 saves space
+        'scores': similarities[top_indices].astype(np.float16).tolist()  # float16 saves space
     }
     
     if (idx + 1) % 500 == 0:
