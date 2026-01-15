@@ -10,10 +10,10 @@ CORS(app)
 movie_data = None
 
 def load_model_data():
-    """Load pre-computed similarity data from GitHub Releases"""
+    """Load pre-computed recommendation data"""
     global movie_data
     
-    # Try local file first (for development)
+    # Try local file first
     base_dir = os.path.dirname(os.path.abspath(__file__))
     data_path = os.path.join(base_dir, "movie_data_light.pkl")
     
@@ -27,13 +27,13 @@ def load_model_data():
         except Exception as e:
             print(f"❌ Error loading local file: {e}")
     
-    # Load from GitHub Releases (for production)
+    # Load from GitHub Releases
     GITHUB_RELEASE_URL = "https://github.com/amirsakib16/Alcyoneus_Dxv65qL/releases/download/v1.0/movie_data_light.pkl"
-    
     print(f"Loading from GitHub Releases: {GITHUB_RELEASE_URL}")
+    
     try:
         import urllib.request
-        print("Downloading movie data (this may take a moment)...")
+        print("Downloading movie data...")
         with urllib.request.urlopen(GITHUB_RELEASE_URL, timeout=60) as response:
             movie_data = pickle.loads(response.read())
         print(f"✅ Loaded {len(movie_data['titles'])} movies from GitHub")
@@ -42,14 +42,13 @@ def load_model_data():
         print(f"❌ Error loading from GitHub: {e}")
         return False
 
-# Initialize data when app starts
 def initialize():
     """Initialize data on startup"""
     global movie_data
     if movie_data is None:
         success = load_model_data()
         if not success:
-            print("⚠️  WARNING: Failed to load movie data!")
+            print("⚠️ WARNING: Failed to load movie data!")
 
 with app.app_context():
     initialize()
@@ -102,7 +101,7 @@ def recommend():
     
     movie_name_lower = movie_name.lower()
     titles = movie_data['titles']
-    similarity_matrix = movie_data['similarity_matrix']
+    recommendations_dict = movie_data['recommendations']
     
     # Find matching movie (case-insensitive)
     movie_index = None
@@ -120,17 +119,12 @@ def recommend():
             "suggestion": "Try searching with /movies?search=yourquery"
         }), 404)
     
-    # Get similarity scores for this movie
-    similarities = similarity_matrix[movie_index]
+    # Get pre-computed recommendations for this movie
+    recs = recommendations_dict[movie_index]
     
-    # Get indices of top 8 similar movies (excluding the movie itself)
-    similar_indices = sorted(
-        range(len(similarities)), 
-        key=lambda i: similarities[i], 
-        reverse=True
-    )[1:9]
-    
-    recommended_movies = [titles[i] for i in similar_indices]
+    # Get top 8 recommendations
+    recommended_indices = recs['indices'][:8]
+    recommended_movies = [titles[i] for i in recommended_indices]
     
     return jsonify({
         "query": movie_name,
@@ -189,3 +183,4 @@ if __name__ == "__main__":
     if movie_data is None:
         load_model_data()
     app.run(debug=True, port=5000)
+    
