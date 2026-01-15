@@ -27,15 +27,25 @@ def load_model_data():
         except Exception as e:
             print(f"❌ Error loading local file: {e}")
     
-    # Load from GitHub Releases
-    GITHUB_RELEASE_URL = "https://github.com/amirsakib16/Alcyoneus_Dxv65qL/releases/download/v1.0/movie_data_light.pkl"
+    # Load from GitHub Releases (zip file)
+    GITHUB_RELEASE_URL = "https://github.com/amirsakib16/Alcyoneus_Dxv65qL/releases/download/v1.0/movie_data_light.zip"
     print(f"Loading from GitHub Releases: {GITHUB_RELEASE_URL}")
     
     try:
         import urllib.request
-        print("Downloading movie data...")
+        import zipfile
+        import io
+        
+        print("Downloading movie data (this may take a moment)...")
         with urllib.request.urlopen(GITHUB_RELEASE_URL, timeout=60) as response:
-            movie_data = pickle.loads(response.read())
+            zip_data = response.read()
+        
+        print("Extracting data...")
+        with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
+            # Extract the .pkl file from the zip
+            pkl_data = zip_file.read('movie_data_light.pkl')
+            movie_data = pickle.loads(pkl_data)
+        
         print(f"✅ Loaded {len(movie_data['titles'])} movies from GitHub")
         return True
     except Exception as e:
@@ -183,4 +193,3 @@ if __name__ == "__main__":
     if movie_data is None:
         load_model_data()
     app.run(debug=True, port=5000)
-    
